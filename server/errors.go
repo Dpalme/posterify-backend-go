@@ -41,6 +41,11 @@ func invalidUserCredentialsError(w http.ResponseWriter) {
 	errorResponse(w, http.StatusUnauthorized, msg)
 }
 
+func unauthorizedForActionError(w http.ResponseWriter) {
+	msg := "does not have authorization"
+	errorResponse(w, http.StatusUnauthorized, msg)
+}
+
 func invalidAuthTokenError(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate", "Token")
 	msg := "invalid or missing authentication token"

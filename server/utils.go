@@ -72,3 +72,16 @@ func parseUserToken(tokenStr string) (userClaims M, err error) {
 
 	return M(claims), nil
 }
+
+func parseInput[T interface{}](r *http.Request, input *T, w http.ResponseWriter) bool {
+	if err := readJSON(r.Body, &input); err != nil {
+		errorResponse(w, http.StatusUnprocessableEntity, err)
+		return true
+	}
+
+	if err := validate.Struct(input); err != nil {
+		validationError(w, err)
+		return true
+	}
+	return false
+}

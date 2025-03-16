@@ -3,13 +3,20 @@ package server
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/Dpalme/posterify-backend/app"
 	"github.com/gorilla/mux"
 )
+
+func collectionBelongsToUser(r *http.Request, collection *app.Collection) bool {
+	user := userFromContext(r.Context())
+	if user.IsAnonymous() {
+		return false
+	}
+	return user.ID == collection.AuthorID
+}
 
 func (s *Server) createCollection() http.HandlerFunc {
 	type Input struct {
@@ -21,19 +28,12 @@ func (s *Server) createCollection() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		input := &Input{}
 
-		if err := readJSON(r.Body, &input); err != nil {
-			errorResponse(w, http.StatusUnprocessableEntity, err)
-			return
-		}
-
-		if err := validate.Struct(input); err != nil {
-			validationError(w, err)
+		shouldReturn := parseInput(r, input, w)
+		if shouldReturn {
 			return
 		}
 
 		user := userFromContext(r.Context())
-
-		log.Print(user.ID)
 
 		collection := app.Collection{
 			Name:        input.Name,
@@ -62,13 +62,8 @@ func (s *Server) updateCollection() http.HandlerFunc {
 		input := &Input{}
 		vars := mux.Vars(r)
 
-		if err := readJSON(r.Body, &input); err != nil {
-			errorResponse(w, http.StatusUnprocessableEntity, err)
-			return
-		}
-
-		if err := validate.Struct(input); err != nil {
-			validationError(w, err)
+		shouldReturn := parseInput(r, input, w)
+		if shouldReturn {
 			return
 		}
 
@@ -94,6 +89,12 @@ func (s *Server) updateCollection() http.HandlerFunc {
 			notFoundError(w, appErr)
 			return
 		}
+
+		if !collectionBelongsToUser(r, collection) {
+			unauthorizedForActionError(w)
+			return
+		}
+
 		patch := app.CollectionPatch{
 			Name:        input.Name,
 			Description: input.Description,
@@ -138,6 +139,11 @@ func (s *Server) getCollection() http.HandlerFunc {
 			return
 		}
 
+		if !collectionBelongsToUser(r, collection) {
+			unauthorizedForActionError(w)
+			return
+		}
+
 		writeJSON(w, http.StatusOK, M{"collection": collection})
 	}
 }
@@ -169,6 +175,11 @@ func (s *Server) deleteCollection() http.HandlerFunc {
 			return
 		}
 
+		if !collectionBelongsToUser(r, collection) {
+			unauthorizedForActionError(w)
+			return
+		}
+
 		err = s.collectionService.DeleteCollection(ctx, nInt)
 		if err != nil {
 			err := ErrorM{"collection": []string{"could not delete collection"}}
@@ -190,16 +201,8 @@ func (s *Server) listCollections() http.HandlerFunc {
 			filter.Name = &v
 		}
 
-		if v := query.Get("author"); v != "" {
-			n, err := strconv.ParseInt(v, 0, 0)
-			if err != nil {
-				err := ErrorM{"collection": []string{"authorId is not valid"}}
-				validationError(w, err)
-				return
-			}
-			nInt := int(n)
-			filter.AuthorId = &nInt
-		}
+		user := userFromContext(ctx)
+		filter.AuthorId = &user.ID
 
 		if v := query.Get("id"); v != "" {
 			n, err := strconv.ParseInt(v, 0, 0)
@@ -260,13 +263,8 @@ func (s *Server) saveImageToCollection() http.HandlerFunc {
 		ctx := r.Context()
 		input := &Input{}
 
-		if err := readJSON(r.Body, &input); err != nil {
-			errorResponse(w, http.StatusUnprocessableEntity, err)
-			return
-		}
-
-		if err := validate.Struct(input); err != nil {
-			validationError(w, err)
+		shouldReturn := parseInput(r, input, w)
+		if shouldReturn {
 			return
 		}
 
@@ -294,6 +292,11 @@ func (s *Server) saveImageToCollection() http.HandlerFunc {
 			default:
 				serverError(w, err)
 			}
+			return
+		}
+
+		if !collectionBelongsToUser(r, collection) {
+			unauthorizedForActionError(w)
 			return
 		}
 
@@ -353,6 +356,11 @@ func (s *Server) deleteImageFromCollection() http.HandlerFunc {
 			default:
 				serverError(w, err)
 			}
+			return
+		}
+
+		if !collectionBelongsToUser(r, collection) {
+			unauthorizedForActionError(w)
 			return
 		}
 
